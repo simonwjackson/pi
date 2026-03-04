@@ -17,7 +17,7 @@
 !.pi/agent/extensions/**/*.ts
 !.pi/agent/extensions/**/*.md
 !.pi/agent/extensions/**/package.json
-!.pi/agent/extensions/**/package-lock.json
+!.pi/agent/extensions/**/bun.lock
 
 !.pi/agent/prompts/
 !.pi/agent/prompts/**/
@@ -41,7 +41,7 @@
 !agent/extensions/**/*.ts
 !agent/extensions/**/*.md
 !agent/extensions/**/package.json
-!agent/extensions/**/package-lock.json
+!agent/extensions/**/bun.lock
 
 !agent/prompts/
 !agent/prompts/**/
