@@ -14,7 +14,7 @@
 
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, TextContent } from "@mariozechner/pi-ai";
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { Key } from "@mariozechner/pi-tui";
 import { extractTodoItems, isSafeCommand, markCompletedSteps, type TodoItem } from "./utils.js";
 
@@ -96,6 +96,23 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		});
 	}
 
+	function startExecution(ctx: ExtensionContext): void {
+		planModeEnabled = false;
+		executionMode = todoItems.length > 0;
+		pi.setActiveTools(NORMAL_MODE_TOOLS);
+		updateStatus(ctx);
+		persistState();
+
+		const execMessage =
+			todoItems.length > 0
+				? `Execute the plan. Start with: ${todoItems[0].text}`
+				: "Execute the plan you just created.";
+		pi.sendMessage(
+			{ customType: "plan-mode-execute", content: execMessage, display: true },
+			{ triggerTurn: true },
+		);
+	}
+
 	pi.registerCommand("plan", {
 		description: "Toggle plan mode (read-only exploration)",
 		handler: async (_args, ctx) => togglePlanMode(ctx),
@@ -110,6 +127,23 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 			}
 			const list = todoItems.map((item, i) => `${i + 1}. ${item.completed ? "✓" : "○"} ${item.text}`).join("\n");
 			ctx.ui.notify(`Plan Progress:\n${list}`, "info");
+		},
+	});
+
+	pi.registerCommand("plan-exec-new", {
+		description: "Execute the current plan in a new session",
+		handler: async (_args, ctx: ExtensionCommandContext) => {
+			if (todoItems.length === 0 && !planModeEnabled) {
+				ctx.ui.notify("No active plan to execute. Use /plan first.", "warning");
+				return;
+			}
+
+			const todosSnapshot = todoItems.map((item) => ({ ...item }));
+			const result = await ctx.newSession();
+			if (result.cancelled) return;
+
+			todoItems = todosSnapshot;
+			startExecution(ctx);
 		},
 	});
 
@@ -261,24 +295,15 @@ After completing a step, include a [DONE:n] tag in your response.`,
 
 		const choice = await ctx.ui.select("Plan mode - what next?", [
 			todoItems.length > 0 ? "Execute the plan (track progress)" : "Execute the plan",
+			"Execute in a new session",
 			"Stay in plan mode",
 			"Refine the plan",
 		]);
 
-		if (choice?.startsWith("Execute")) {
-			planModeEnabled = false;
-			executionMode = todoItems.length > 0;
-			pi.setActiveTools(NORMAL_MODE_TOOLS);
-			updateStatus(ctx);
-
-			const execMessage =
-				todoItems.length > 0
-					? `Execute the plan. Start with: ${todoItems[0].text}`
-					: "Execute the plan you just created.";
-			pi.sendMessage(
-				{ customType: "plan-mode-execute", content: execMessage, display: true },
-				{ triggerTurn: true },
-			);
+		if (choice?.startsWith("Execute the plan")) {
+			startExecution(ctx);
+		} else if (choice === "Execute in a new session") {
+			pi.sendUserMessage("/plan-exec-new");
 		} else if (choice === "Refine the plan") {
 			const refinement = await ctx.ui.editor("Refine the plan:", "");
 			if (refinement?.trim()) {
