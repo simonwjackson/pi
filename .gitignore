@@ -13,16 +13,20 @@
 !.pi/agent/models.json
 
 !.pi/agent/extensions/
+!.pi/agent/extensions/**/
 !.pi/agent/extensions/**/*.ts
 !.pi/agent/extensions/**/*.md
 !.pi/agent/extensions/**/package.json
 !.pi/agent/extensions/**/package-lock.json
 
 !.pi/agent/prompts/
+!.pi/agent/prompts/**/
 !.pi/agent/prompts/**/*.md
 !.pi/agent/skills/
+!.pi/agent/skills/**/
 !.pi/agent/skills/**/*.md
 !.pi/agent/themes/
+!.pi/agent/themes/**/
 !.pi/agent/themes/**/*.json
 
 # Always ignore sensitive/generated data
