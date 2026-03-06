@@ -10,10 +10,13 @@ Read-only exploration mode for safe code analysis.
 - **Progress tracking**: Widget shows completion status during execution
 - **[DONE:n] markers**: Explicit step completion tracking
 - **Session persistence**: State survives session resume
+- **Handoff auto-compaction**: `/plan-exec-new` enables session-scoped auto-compaction for the new execution session only, triggering early at roughly 85% context usage
 
 ## Commands
 
 - `/plan` - Toggle plan mode
+- `/plan <request>` - Enable plan mode (if needed) and run a planning request immediately
+- `/plan-exec-new` - Execute the current plan in a new session
 - `/todos` - Show current plan progress
 - `Ctrl+Alt+P` - Toggle plan mode (shortcut)
 

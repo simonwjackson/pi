@@ -21,6 +21,16 @@ import { extractTodoItems, isSafeCommand, markCompletedSteps, type TodoItem } fr
 // Tools
 const PLAN_MODE_TOOLS = ["read", "bash", "grep", "find", "ls", "questionnaire"];
 const NORMAL_MODE_TOOLS = ["read", "bash", "edit", "write"];
+const HANDOFF_AUTO_COMPACT_RESERVE_TOKENS = 16384;
+const HANDOFF_AUTO_COMPACT_PERCENT = 0.85;
+const HANDOFF_AUTO_COMPACT_INSTRUCTIONS = `Preserve the handed-off plan context, including:
+- the original request
+- the planning output and rationale
+- the extracted tasks / remaining steps
+- implementation progress and decisions made so far
+- any blockers, open questions, or follow-up work
+
+Keep the summary actionable for continuing plan execution in this session.`;
 
 // Type guard for assistant messages
 function isAssistantMessage(m: AgentMessage): m is AssistantMessage {
@@ -35,10 +45,54 @@ function getTextContent(message: AssistantMessage): string {
 		.join("\n");
 }
 
+function getMessageTextContent(message: AgentMessage): string {
+	const content = message.content;
+	if (typeof content === "string") return content;
+	if (!Array.isArray(content)) return "";
+
+	return content
+		.filter((block): block is TextContent => block.type === "text")
+		.map((block) => block.text)
+		.join("\n");
+}
+
+interface PlanContextSnapshot {
+	request?: string;
+	response?: string;
+}
+
+function getLatestPlanContext(messages: AgentMessage[]): PlanContextSnapshot | undefined {
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const message = messages[i];
+		if (!isAssistantMessage(message)) continue;
+
+		const response = getTextContent(message).trim();
+		if (extractTodoItems(response).length === 0) continue;
+
+		let request: string | undefined;
+		for (let j = i - 1; j >= 0; j--) {
+			const previous = messages[j];
+			if (previous.role !== "user") continue;
+
+			const text = getMessageTextContent(previous).trim();
+			if (text) {
+				request = text;
+				break;
+			}
+		}
+
+		return { request, response };
+	}
+
+	return undefined;
+}
+
 export default function planModeExtension(pi: ExtensionAPI): void {
 	let planModeEnabled = false;
 	let executionMode = false;
 	let todoItems: TodoItem[] = [];
+	let handoffAutoCompactionEnabled = false;
+	let handoffAutoCompactionInFlight = false;
 
 	pi.registerFlag("plan", {
 		description: "Start in plan mode (read-only exploration)",
@@ -96,6 +150,86 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		});
 	}
 
+	function restoreSessionState(ctx: ExtensionContext, includePlanFlag = false): void {
+		planModeEnabled = includePlanFlag && pi.getFlag("plan") === true;
+		executionMode = false;
+		todoItems = [];
+		handoffAutoCompactionEnabled = false;
+		handoffAutoCompactionInFlight = false;
+
+		const entries = ctx.sessionManager.getEntries();
+		const planModeEntry = entries
+			.filter((e: { type: string; customType?: string }) => e.type === "custom" && e.customType === "plan-mode")
+			.pop() as { data?: { enabled: boolean; todos?: TodoItem[]; executing?: boolean } } | undefined;
+
+		if (planModeEntry?.data) {
+			planModeEnabled = planModeEntry.data.enabled ?? planModeEnabled;
+			todoItems = planModeEntry.data.todos ?? todoItems;
+			executionMode = planModeEntry.data.executing ?? executionMode;
+		}
+
+		const autoCompactionEntry = entries
+			.filter(
+				(e: { type: string; customType?: string }) =>
+					e.type === "custom" && e.customType === "plan-mode-auto-compaction",
+			)
+			.pop() as { data?: { enabled?: boolean } } | undefined;
+		handoffAutoCompactionEnabled = autoCompactionEntry?.data?.enabled === true;
+
+		// On resume: re-scan messages to rebuild completion state
+		// Only scan messages AFTER the last "plan-mode-execute" to avoid picking up [DONE:n] from previous plans
+		const isResume = planModeEntry !== undefined;
+		if (isResume && executionMode && todoItems.length > 0) {
+			let executeIndex = -1;
+			for (let i = entries.length - 1; i >= 0; i--) {
+				const entry = entries[i] as { type: string; customType?: string };
+				if (entry.customType === "plan-mode-execute") {
+					executeIndex = i;
+					break;
+				}
+			}
+
+			const messages: AssistantMessage[] = [];
+			for (let i = executeIndex + 1; i < entries.length; i++) {
+				const entry = entries[i];
+				if (entry.type === "message" && "message" in entry && isAssistantMessage(entry.message as AgentMessage)) {
+					messages.push(entry.message as AssistantMessage);
+				}
+			}
+			const allText = messages.map(getTextContent).join("\n");
+			markCompletedSteps(allText, todoItems);
+		}
+
+		pi.setActiveTools(planModeEnabled ? PLAN_MODE_TOOLS : NORMAL_MODE_TOOLS);
+		updateStatus(ctx);
+	}
+
+	function maybeAutoCompactHandoffSession(ctx: ExtensionContext): void {
+		if (!handoffAutoCompactionEnabled || handoffAutoCompactionInFlight) return;
+
+		const usage = ctx.getContextUsage();
+		if (!usage || usage.tokens === null) return;
+
+		const reserveThreshold = usage.contextWindow - HANDOFF_AUTO_COMPACT_RESERVE_TOKENS;
+		const earlyThreshold = Math.floor(usage.contextWindow * HANDOFF_AUTO_COMPACT_PERCENT);
+		const threshold = Math.min(reserveThreshold, earlyThreshold);
+		if (usage.tokens <= threshold) return;
+
+		handoffAutoCompactionInFlight = true;
+		ctx.ui.notify("Auto-compacting handoff session…", "info");
+		ctx.compact({
+			customInstructions: HANDOFF_AUTO_COMPACT_INSTRUCTIONS,
+			onComplete: () => {
+				handoffAutoCompactionInFlight = false;
+				ctx.ui.notify("Handoff session compaction completed.", "info");
+			},
+			onError: (error) => {
+				handoffAutoCompactionInFlight = false;
+				ctx.ui.notify(`Handoff session compaction failed: ${error.message}`, "error");
+			},
+		});
+	}
+
 	function startExecution(ctx: ExtensionContext): void {
 		planModeEnabled = false;
 		executionMode = todoItems.length > 0;
@@ -105,17 +239,34 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 
 		const execMessage =
 			todoItems.length > 0
-				? `Execute the plan. Start with: ${todoItems[0].text}`
+				? `Execute the plan. Start with step 1: ${todoItems[0].text}`
 				: "Execute the plan you just created.";
-		pi.sendMessage(
-			{ customType: "plan-mode-execute", content: execMessage, display: true },
-			{ triggerTurn: true },
-		);
+
+		// Use a user message, not a custom message, so the normal prompt pipeline runs
+		// and before_agent_start can inject the full execution context.
+		pi.sendUserMessage(execMessage);
 	}
 
 	pi.registerCommand("plan", {
-		description: "Toggle plan mode (read-only exploration)",
-		handler: async (_args, ctx) => togglePlanMode(ctx),
+		description: "Toggle plan mode, or run a planning request in plan mode with optional input",
+		handler: async (args, ctx) => {
+			const input = args?.trim();
+			if (!input) {
+				togglePlanMode(ctx);
+				return;
+			}
+
+			if (!planModeEnabled) {
+				togglePlanMode(ctx);
+			} else if (executionMode) {
+				executionMode = false;
+				pi.setActiveTools(PLAN_MODE_TOOLS);
+				updateStatus(ctx);
+				persistState();
+			}
+
+			pi.sendUserMessage(input);
+		},
 	});
 
 	pi.registerCommand("todos", {
@@ -139,9 +290,44 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 			}
 
 			const todosSnapshot = todoItems.map((item) => ({ ...item }));
-			const result = await ctx.newSession();
+			const branchMessages = ctx.sessionManager
+				.getBranch()
+				.filter((entry): entry is { type: "message"; message: AgentMessage } => entry.type === "message")
+				.map((entry) => entry.message);
+			const planContext = getLatestPlanContext(branchMessages);
+			const parentSession = ctx.sessionManager.getSessionFile();
+			const result = await ctx.newSession({
+				parentSession,
+				setup: async (sessionManager) => {
+					const sections = ["[PLAN HANDOFF FROM PARENT SESSION]"];
+
+					if (planContext?.request?.trim()) {
+						sections.push(`Original request:\n${planContext.request.trim()}`);
+					}
+
+					if (planContext?.response?.trim()) {
+						sections.push(`Planning output:\n${planContext.response.trim()}`);
+					}
+
+					if (todosSnapshot.length > 0) {
+						const planText = todosSnapshot.map((item) => `${item.step}. ${item.text}`).join("\n");
+						sections.push(`Extracted tasks:\n${planText}`);
+					}
+
+					sessionManager.appendCustomMessageEntry("plan-mode-handoff", sections.join("\n\n"), true, {
+						todos: todosSnapshot,
+						planContext,
+					});
+					sessionManager.appendCustomEntry("plan-mode-auto-compaction", {
+						enabled: true,
+						reason: "handoff-session",
+					});
+				},
+			});
 			if (result.cancelled) return;
 
+			handoffAutoCompactionEnabled = true;
+			handoffAutoCompactionInFlight = false;
 			todoItems = todosSnapshot;
 			startExecution(ctx);
 		},
@@ -240,14 +426,15 @@ After completing a step, include a [DONE:n] tag in your response.`,
 
 	// Track progress after each turn
 	pi.on("turn_end", async (event, ctx) => {
-		if (!executionMode || todoItems.length === 0) return;
-		if (!isAssistantMessage(event.message)) return;
-
-		const text = getTextContent(event.message);
-		if (markCompletedSteps(text, todoItems) > 0) {
-			updateStatus(ctx);
+		if (executionMode && todoItems.length > 0 && isAssistantMessage(event.message)) {
+			const text = getTextContent(event.message);
+			if (markCompletedSteps(text, todoItems) > 0) {
+				updateStatus(ctx);
+			}
+			persistState();
 		}
-		persistState();
+
+		maybeAutoCompactHandoffSession(ctx);
 	});
 
 	// Handle plan completion and plan mode UI
@@ -303,7 +490,11 @@ After completing a step, include a [DONE:n] tag in your response.`,
 		if (choice?.startsWith("Execute the plan")) {
 			startExecution(ctx);
 		} else if (choice === "Execute in a new session") {
-			pi.sendUserMessage("/plan-exec-new");
+			// pi.sendUserMessage() bypasses extension command handling, so sending
+			// "/plan-exec-new" here would go to the LLM as a normal user message.
+			// Pre-fill the command instead so the user's next Enter runs the command.
+			ctx.ui.setEditorText("/plan-exec-new");
+			ctx.ui.notify('Ready: press Enter to run "/plan-exec-new".', "info");
 		} else if (choice === "Refine the plan") {
 			const refinement = await ctx.ui.editor("Refine the plan:", "");
 			if (refinement?.trim()) {
@@ -314,52 +505,10 @@ After completing a step, include a [DONE:n] tag in your response.`,
 
 	// Restore state on session start/resume
 	pi.on("session_start", async (_event, ctx) => {
-		if (pi.getFlag("plan") === true) {
-			planModeEnabled = true;
-		}
+		restoreSessionState(ctx, true);
+	});
 
-		const entries = ctx.sessionManager.getEntries();
-
-		// Restore persisted state
-		const planModeEntry = entries
-			.filter((e: { type: string; customType?: string }) => e.type === "custom" && e.customType === "plan-mode")
-			.pop() as { data?: { enabled: boolean; todos?: TodoItem[]; executing?: boolean } } | undefined;
-
-		if (planModeEntry?.data) {
-			planModeEnabled = planModeEntry.data.enabled ?? planModeEnabled;
-			todoItems = planModeEntry.data.todos ?? todoItems;
-			executionMode = planModeEntry.data.executing ?? executionMode;
-		}
-
-		// On resume: re-scan messages to rebuild completion state
-		// Only scan messages AFTER the last "plan-mode-execute" to avoid picking up [DONE:n] from previous plans
-		const isResume = planModeEntry !== undefined;
-		if (isResume && executionMode && todoItems.length > 0) {
-			// Find the index of the last plan-mode-execute entry (marks when current execution started)
-			let executeIndex = -1;
-			for (let i = entries.length - 1; i >= 0; i--) {
-				const entry = entries[i] as { type: string; customType?: string };
-				if (entry.customType === "plan-mode-execute") {
-					executeIndex = i;
-					break;
-				}
-			}
-
-			// Only scan messages after the execute marker
-			const messages: AssistantMessage[] = [];
-			for (let i = executeIndex + 1; i < entries.length; i++) {
-				const entry = entries[i];
-				if (entry.type === "message" && "message" in entry && isAssistantMessage(entry.message as AgentMessage)) {
-					messages.push(entry.message as AssistantMessage);
-				}
-			}
-			const allText = messages.map(getTextContent).join("\n");
-			markCompletedSteps(allText, todoItems);
-		}
-
-		if (planModeEnabled) {
-			pi.setActiveTools(PLAN_MODE_TOOLS);
-		}
-		updateStatus(ctx);
+	pi.on("session_switch", async (_event, ctx) => {
+		restoreSessionState(ctx, false);
 	});
 }
