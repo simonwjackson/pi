@@ -93,6 +93,7 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 	let todoItems: TodoItem[] = [];
 	let handoffAutoCompactionEnabled = false;
 	let handoffAutoCompactionInFlight = false;
+	let executionCompletedCountAtAgentStart = 0;
 
 	pi.registerFlag("plan", {
 		description: "Start in plan mode (read-only exploration)",
@@ -113,14 +114,24 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 
 		// Widget showing todo list
 		if (executionMode && todoItems.length > 0) {
-			const lines = todoItems.map((item) => {
-				if (item.completed) {
-					return (
-						ctx.ui.theme.fg("success", "☑ ") + ctx.ui.theme.fg("muted", ctx.ui.theme.strikethrough(item.text))
-					);
+			const completedItems = todoItems.filter((item) => item.completed);
+			const remainingItems = todoItems.filter((item) => !item.completed);
+			const lines = [
+				ctx.ui.theme.fg(
+					"accent",
+					`📋 ${completedItems.length}/${todoItems.length} complete • ${remainingItems.length} remaining`,
+				),
+			];
+
+			if (remainingItems.length > 0) {
+				lines.push(`${ctx.ui.theme.fg("warning", "→ ")}${remainingItems[0].text}`);
+				for (const item of remainingItems.slice(1)) {
+					lines.push(`${ctx.ui.theme.fg("muted", "☐ ")}${item.text}`);
 				}
-				return `${ctx.ui.theme.fg("muted", "☐ ")}${item.text}`;
-			});
+			} else {
+				lines.push(ctx.ui.theme.fg("success", "All plan steps completed"));
+			}
+
 			ctx.ui.setWidget("plan-todos", lines);
 		} else {
 			ctx.ui.setWidget("plan-todos", undefined);
@@ -156,6 +167,7 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		todoItems = [];
 		handoffAutoCompactionEnabled = false;
 		handoffAutoCompactionInFlight = false;
+		executionCompletedCountAtAgentStart = 0;
 
 		const entries = ctx.sessionManager.getEntries();
 		const planModeEntry = entries
@@ -237,10 +249,10 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		updateStatus(ctx);
 		persistState();
 
-		const execMessage =
-			todoItems.length > 0
-				? `Execute the plan. Start with step 1: ${todoItems[0].text}`
-				: "Execute the plan you just created.";
+		const nextStep = todoItems.find((item) => !item.completed);
+		const execMessage = nextStep
+			? `Begin plan execution. Execute step ${nextStep.step}: ${nextStep.text}. Complete only this step, include [DONE:${nextStep.step}] when finished, and then stop so the system can continue automatically.`
+			: "Execute the plan you just created.";
 
 		// Use a user message, not a custom message, so the normal prompt pipeline runs
 		// and before_agent_start can inject the full execution context.
@@ -375,6 +387,12 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		};
 	});
 
+	pi.on("agent_start", async () => {
+		if (executionMode) {
+			executionCompletedCountAtAgentStart = todoItems.filter((t) => t.completed).length;
+		}
+	});
+
 	// Inject plan/execution context before agent starts
 	pi.on("before_agent_start", async () => {
 		if (planModeEnabled) {
@@ -407,6 +425,7 @@ Do NOT attempt to make changes - just describe what you would do.`,
 
 		if (executionMode && todoItems.length > 0) {
 			const remaining = todoItems.filter((t) => !t.completed);
+			const nextStep = remaining[0];
 			const todoList = remaining.map((t) => `${t.step}. ${t.text}`).join("\n");
 			return {
 				message: {
@@ -416,8 +435,15 @@ Do NOT attempt to make changes - just describe what you would do.`,
 Remaining steps:
 ${todoList}
 
-Execute each step in order.
-After completing a step, include a [DONE:n] tag in your response.`,
+Current step:
+${nextStep ? `${nextStep.step}. ${nextStep.text}` : "None"}
+
+Execution rules:
+- Execute only the current step in this turn.
+- When that step is complete, include [DONE:${nextStep?.step ?? "n"}] in your response.
+- Do not start later steps in the same turn; the system will automatically continue with the next remaining step.
+- If you are blocked, need clarification, or need user approval, stop and explain the blocker.
+- Do not emit a [DONE:n] tag unless the corresponding step is actually complete.`,
 					display: false,
 				},
 			};
@@ -452,6 +478,24 @@ After completing a step, include a [DONE:n] tag in your response.`,
 				pi.setActiveTools(NORMAL_MODE_TOOLS);
 				updateStatus(ctx);
 				persistState(); // Save cleared state so resume doesn't restore old execution mode
+				return;
+			}
+
+			const completedCount = todoItems.filter((t) => t.completed).length;
+			const nextStep = todoItems.find((t) => !t.completed);
+			if (completedCount > executionCompletedCountAtAgentStart && nextStep) {
+				pi.sendUserMessage(
+					`Continue plan execution with step ${nextStep.step}: ${nextStep.text}. Complete only this step, include [DONE:${nextStep.step}] when finished, and then stop so the system can continue automatically.`,
+				);
+			} else if (nextStep) {
+				pi.sendMessage(
+					{
+						customType: "plan-execution-paused",
+						content: `**Plan execution paused**\n\nNo completed step was detected for the current turn.\n\nNext remaining step:\n${nextStep.step}. ${nextStep.text}\n\nResolve the blocker or send a follow-up instruction to continue.`,
+						display: true,
+					},
+					{ triggerTurn: false },
+				);
 			}
 			return;
 		}

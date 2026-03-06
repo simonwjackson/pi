@@ -46,8 +46,9 @@ Plan:
 
 ### Execution Mode
 - Full tool access restored
-- Agent executes steps in order
-- `[DONE:n]` markers track completion
+- Agent executes one remaining step per turn and auto-continues until blocked or complete
+- `[DONE:n]` markers track completion and cross items off in the widget
+- If no step is marked complete, execution pauses and waits for user intervention
 - Widget shows progress
 
 ### Command Allowlist
