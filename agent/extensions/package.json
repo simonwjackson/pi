@@ -2,10 +2,12 @@
   "name": "pi-user-extensions",
   "private": true,
   "dependencies": {
+    "@google/genai": "^1.45.0",
     "@mariozechner/pi-agent-core": "^0.56.0",
     "@mariozechner/pi-ai": "^0.56.0",
-    "@mariozechner/pi-coding-agent": "^0.56.0",
+    "@mariozechner/pi-coding-agent": "^0.57.1",
     "@mariozechner/pi-tui": "^0.56.0",
-    "@sinclair/typebox": "^0.34.48"
+    "@sinclair/typebox": "^0.34.48",
+    "diff": "^8.0.3"
   }
 }
