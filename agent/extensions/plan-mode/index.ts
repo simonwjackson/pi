@@ -251,7 +251,7 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 
 		const nextStep = todoItems.find((item) => !item.completed);
 		const execMessage = nextStep
-			? `Begin plan execution. Execute step ${nextStep.step}: ${nextStep.text}. Complete only this step, include [DONE:${nextStep.step}] when finished, and then stop so the system can continue automatically.`
+			? `Begin plan execution. Execute step ${nextStep.step}: ${nextStep.fullText ?? nextStep.text}. Complete only this step, include [DONE:${nextStep.step}] when finished, and then stop so the system can continue automatically.`
 			: "Execute the plan you just created.";
 
 		// Use a user message, not a custom message, so the normal prompt pipeline runs
@@ -322,7 +322,7 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 					}
 
 					if (todosSnapshot.length > 0) {
-						const planText = todosSnapshot.map((item) => `${item.step}. ${item.text}`).join("\n");
+						const planText = todosSnapshot.map((item) => `${item.step}. ${item.fullText ?? item.text}`).join("\n");
 						sections.push(`Extracted tasks:\n${planText}`);
 					}
 
@@ -410,14 +410,16 @@ Restrictions:
 Ask clarifying questions using the questionnaire tool.
 Use brave-search skill via bash for web research.
 
-Create a detailed numbered plan under a "Plan:" header:
+CRITICAL: You MUST output your plan with a "Plan:" header on its own line followed by numbered steps.
+This exact format is REQUIRED for the system to create trackable tasks in the UI:
 
 Plan:
 1. First step description
 2. Second step description
 ...
 
-Do NOT attempt to make changes - just describe what you would do.`,
+Without the "Plan:" header line, the system CANNOT extract tasks for progress tracking.
+Do NOT attempt to make changes - only describe what you would do.`,
 					display: false,
 				},
 			};
@@ -426,7 +428,7 @@ Do NOT attempt to make changes - just describe what you would do.`,
 		if (executionMode && todoItems.length > 0) {
 			const remaining = todoItems.filter((t) => !t.completed);
 			const nextStep = remaining[0];
-			const todoList = remaining.map((t) => `${t.step}. ${t.text}`).join("\n");
+			const todoList = remaining.map((t) => `${t.step}. ${t.fullText ?? t.text}`).join("\n");
 			return {
 				message: {
 					customType: "plan-execution-context",
@@ -436,7 +438,7 @@ Remaining steps:
 ${todoList}
 
 Current step:
-${nextStep ? `${nextStep.step}. ${nextStep.text}` : "None"}
+${nextStep ? `${nextStep.step}. ${nextStep.fullText ?? nextStep.text}` : "None"}
 
 Execution rules:
 - Execute only the current step in this turn.
@@ -485,13 +487,13 @@ Execution rules:
 			const nextStep = todoItems.find((t) => !t.completed);
 			if (completedCount > executionCompletedCountAtAgentStart && nextStep) {
 				pi.sendUserMessage(
-					`Continue plan execution with step ${nextStep.step}: ${nextStep.text}. Complete only this step, include [DONE:${nextStep.step}] when finished, and then stop so the system can continue automatically.`,
+					`Continue plan execution with step ${nextStep.step}: ${nextStep.fullText ?? nextStep.text}. Complete only this step, include [DONE:${nextStep.step}] when finished, and then stop so the system can continue automatically.`,
 				);
 			} else if (nextStep) {
 				pi.sendMessage(
 					{
 						customType: "plan-execution-paused",
-						content: `**Plan execution paused**\n\nNo completed step was detected for the current turn.\n\nNext remaining step:\n${nextStep.step}. ${nextStep.text}\n\nResolve the blocker or send a follow-up instruction to continue.`,
+						content: `**Plan execution paused**\n\nNo completed step was detected for the current turn.\n\nNext remaining step:\n${nextStep.step}. ${nextStep.fullText ?? nextStep.text}\n\nResolve the blocker or send a follow-up instruction to continue.`,
 						display: true,
 					},
 					{ triggerTurn: false },
