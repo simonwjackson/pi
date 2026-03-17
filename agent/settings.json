@@ -1,11 +1,17 @@
 {
-  "lastChangelogVersion": "0.56.0",
+  "lastChangelogVersion": "0.58.4",
   "defaultProvider": "openai-codex",
-  "defaultModel": "gpt-5.3-codex",
+  "defaultModel": "gpt-5.4",
   "defaultThinkingLevel": "high",
   "quietStartup": true,
   "collapseChangelog": true,
   "compaction": {
     "enabled": false
-  }
+  },
+  "enabledModels": [
+    "anthropic/claude-opus-4-6",
+    "openai-codex/gpt-5.4"
+  ],
+  "hideThinkingBlock": true,
+  "steeringMode": "one-at-a-time"
 }
