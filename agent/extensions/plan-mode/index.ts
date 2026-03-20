@@ -19,8 +19,8 @@ import { Key } from "@mariozechner/pi-tui";
 import { extractTodoItems, isSafeCommand, markCompletedSteps, type TodoItem } from "./utils.js";
 
 // Tools
-const PLAN_MODE_TOOLS = ["read", "bash", "grep", "find", "ls", "questionnaire"];
-const NORMAL_MODE_TOOLS = ["read", "bash", "edit", "write"];
+const PLAN_MODE_TOOLS = ["read", "bash", "grep", "find", "ls", "questionnaire", "web_search"];
+const NORMAL_MODE_TOOLS = ["read", "bash", "edit", "write", "web_search"];
 const HANDOFF_AUTO_COMPACT_RESERVE_TOKENS = 16384;
 const HANDOFF_AUTO_COMPACT_PERCENT = 0.85;
 const HANDOFF_AUTO_COMPACT_INSTRUCTIONS = `Preserve the handed-off plan context, including:
