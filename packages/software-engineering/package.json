@@ -1,0 +1,16 @@
+{
+  "name": "@simonwjackson/pi-software-engineering",
+  "version": "0.1.0",
+  "description": "Pi package for software engineering skills.",
+  "license": "MIT",
+  "keywords": ["pi-package", "software-engineering", "skills", "tdd"],
+  "files": [
+    "README.md",
+    "LICENSE",
+    "skills"
+  ],
+  "type": "module",
+  "pi": {
+    "skills": ["./skills"]
+  }
+}
