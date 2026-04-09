@@ -54,6 +54,13 @@
 !agent/themes/**/
 !agent/themes/**/*.json
 
+# Allow local Pi packages
+!packages/
+!packages/**/
+!packages/**
+packages/**/node_modules/**
+packages/**/*.env*
+
 # Always ignore sensitive/generated data
 .pi/agent/auth.json
 .pi/agent/sessions/**
@@ -71,5 +78,16 @@ agent/pi-debug.log
 agent/extensions/**/node_modules/**
 agent/**/*.env*
 
+# Allow packages directory
+!packages/
+!packages/**/
+!packages/**/*.ts
+!packages/**/*.md
+!packages/**/*.json
+!packages/**/*.lock
+!packages/**/*.nix
+
 # Local backups
 .backup-*/
+/packages/pi-thinking/node_modules
+/packages/agent-browser/result

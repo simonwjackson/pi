@@ -1,17 +1,31 @@
 {
-  "lastChangelogVersion": "0.61.0",
-  "defaultProvider": "anthropic",
-  "defaultModel": "claude-opus-4-6",
+  "lastChangelogVersion": "0.66.1",
+  "defaultProvider": "openai-codex",
+  "defaultModel": "gpt-5.4",
   "defaultThinkingLevel": "high",
   "quietStartup": true,
   "collapseChangelog": true,
+  "theme": "tokyo-night-dark",
   "compaction": {
-    "enabled": false
+    "enabled": true
   },
   "enabledModels": [
     "anthropic/claude-opus-4-6",
     "openai-codex/gpt-5.4"
   ],
   "hideThinkingBlock": true,
-  "steeringMode": "one-at-a-time"
+  "steeringMode": "one-at-a-time",
+  "packages": [
+    "../packages/pi-thinking",
+    "../packages/software-engineering",
+    "npm:@tintinweb/pi-subagents"
+  ],
+  "npmCommand": [
+    "env",
+    "NPM_CONFIG_PREFIX=/home/simonwjackson/.npm-global",
+    "npm"
+  ],
+  "editorPaddingX": 1,
+  "transport": "sse",
+  "enableSkillCommands": true
 }

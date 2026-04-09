@@ -5,6 +5,7 @@ This repo tracks a public-safe subset of `~/.pi`.
 ## Tracked
 - `.pi/agent/settings.json`
 - `.pi/agent/extensions/**` (source + package manifests)
+- `packages/**` (local Pi packages)
 - optional prompts/skills/themes if added later
 
 ## Not tracked
