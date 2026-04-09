@@ -1,0 +1,36 @@
+{
+  "name": "@simonwjackson/pi-thinking",
+  "version": "0.1.0",
+  "description": "Guided thinking, shaping, and web research workflows for Pi.",
+  "license": "UNLICENSED",
+  "keywords": ["pi-package"],
+  "files": [
+    "README.md",
+    "extensions",
+    "skills",
+    "prompts"
+  ],
+  "scripts": {
+    "test": "bun test extensions/**/*.test.ts"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-agent-core": "*",
+    "@mariozechner/pi-ai": "*",
+    "@mariozechner/pi-coding-agent": "*",
+    "@mariozechner/pi-tui": "*",
+    "@sinclair/typebox": "*"
+  },
+  "devDependencies": {
+    "@mariozechner/pi-agent-core": "^0.56.0",
+    "@mariozechner/pi-ai": "^0.56.0",
+    "@mariozechner/pi-coding-agent": "^0.57.1",
+    "@mariozechner/pi-tui": "^0.56.0",
+    "@sinclair/typebox": "^0.34.48"
+  },
+  "type": "module",
+  "pi": {
+    "extensions": ["./extensions"],
+    "skills": ["./skills"],
+    "prompts": ["./prompts"]
+  }
+}
