@@ -14,7 +14,7 @@
 
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, TextContent } from "@mariozechner/pi-ai";
-import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { SessionManager, type ExtensionAPI, type ExtensionCommandContext, type ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { Key } from "@mariozechner/pi-tui";
 import { extractTodoItems, isSafeCommand, markCompletedSteps, type TodoItem } from "./utils.js";
 
@@ -109,6 +109,31 @@ function getLatestSpecContext(messages: AgentMessage[]): SpecContextSnapshot | u
 	}
 
 	return undefined;
+}
+
+function getLatestCustomEntryIndex(entries: Array<{ type: string; customType?: string }>, customTypes: string[]): number {
+	for (let i = entries.length - 1; i >= 0; i--) {
+		const entry = entries[i];
+		if (entry.type === "custom" && entry.customType && customTypes.includes(entry.customType)) {
+			return i;
+		}
+	}
+
+	return -1;
+}
+
+function shouldAutoStartHandoffExecution(entries: Array<{ type: string; customType?: string }>): boolean {
+	const pendingIndex = getLatestCustomEntryIndex(entries, [
+		"spec-mode-handoff-pending-start",
+		"plan-mode-handoff-pending-start",
+	]);
+	if (pendingIndex === -1) return false;
+
+	const startedIndex = getLatestCustomEntryIndex(entries, [
+		"spec-mode-handoff-started",
+		"plan-mode-handoff-started",
+	]);
+	return startedIndex < pendingIndex;
 }
 
 export default function specModeExtension(pi: ExtensionAPI): void {
@@ -304,6 +329,10 @@ export default function specModeExtension(pi: ExtensionAPI): void {
 		restoreNormalModeTools();
 		updateStatus(ctx);
 		persistState();
+		pi.appendEntry("spec-mode-execute", {
+			startedAt: new Date().toISOString(),
+			todos: todoItems.map((item) => ({ ...item })),
+		});
 
 		const nextStep = todoItems.find((item) => !item.completed);
 		const execMessage = nextStep
@@ -311,6 +340,13 @@ export default function specModeExtension(pi: ExtensionAPI): void {
 			: "Execute the spec you just created.";
 
 		pi.sendUserMessage(execMessage, options?.deliverAs ? { deliverAs: options.deliverAs } : undefined);
+	}
+
+	function scheduleHandoffExecutionStart(ctx: ExtensionContext): void {
+		pi.appendEntry("spec-mode-handoff-started", {
+			startedAt: new Date().toISOString(),
+		});
+		setTimeout(() => startExecution(ctx), 0);
 	}
 
 	function beginSpecRequest(input: string, ctx: ExtensionCommandContext): void {
@@ -422,40 +458,55 @@ export default function specModeExtension(pi: ExtensionAPI): void {
 				.map((entry) => entry.message);
 			const specContext = getLatestSpecContext(branchMessages);
 			const parentSession = ctx.sessionManager.getSessionFile();
-			const result = await ctx.newSession({
-				parentSession,
-				setup: async (sessionManager) => {
-					const sections = ["[SPEC HANDOFF FROM PARENT SESSION]"];
+			const handoffSession = SessionManager.create(
+				ctx.sessionManager.getCwd(),
+				ctx.sessionManager.getSessionDir(),
+			);
 
-					if (specContext?.request?.trim()) {
-						sections.push(`Original request:\n${specContext.request.trim()}`);
-					}
+			if (parentSession) {
+				handoffSession.newSession({ parentSession });
+			}
 
-					if (specContext?.response?.trim()) {
-						sections.push(`Spec output:\n${specContext.response.trim()}`);
-					}
+			const sections = ["[SPEC HANDOFF FROM PARENT SESSION]"];
 
-					if (todosSnapshot.length > 0) {
-						const specText = todosSnapshot.map((item) => `${item.step}. ${item.fullText ?? item.text}`).join("\n");
-						sections.push(`Extracted tasks:\n${specText}`);
-					}
+			if (specContext?.request?.trim()) {
+				sections.push(`Original request:\n${specContext.request.trim()}`);
+			}
 
-					sessionManager.appendCustomMessageEntry("spec-mode-handoff", sections.join("\n\n"), true, {
-						todos: todosSnapshot,
-						specContext,
-					});
-					sessionManager.appendCustomEntry("spec-mode-auto-compaction", {
-						enabled: true,
-						reason: "handoff-session",
-					});
-				},
+			if (specContext?.response?.trim()) {
+				sections.push(`Spec output:\n${specContext.response.trim()}`);
+			}
+
+			if (todosSnapshot.length > 0) {
+				const specText = todosSnapshot.map((item) => `${item.step}. ${item.fullText ?? item.text}`).join("\n");
+				sections.push(`Extracted tasks:\n${specText}`);
+			}
+
+			handoffSession.appendCustomMessageEntry("spec-mode-handoff", sections.join("\n\n"), true, {
+				todos: todosSnapshot,
+				specContext,
 			});
-			if (result.cancelled) return;
+			handoffSession.appendCustomEntry("spec-mode", {
+				enabled: false,
+				todos: todosSnapshot,
+				executing: todosSnapshot.length > 0,
+			});
+			handoffSession.appendCustomEntry("spec-mode-auto-compaction", {
+				enabled: true,
+				reason: "handoff-session",
+			});
+			handoffSession.appendCustomEntry("spec-mode-handoff-pending-start", {
+				createdAt: new Date().toISOString(),
+			});
 
-			handoffAutoCompactionEnabled = true;
-			handoffAutoCompactionInFlight = false;
-			todoItems = todosSnapshot;
-			startExecution(ctx);
+			const handoffSessionFile = handoffSession.getSessionFile();
+			if (!handoffSessionFile) {
+				ctx.ui.notify("Failed to create handoff session.", "error");
+				return;
+			}
+
+			const result = await ctx.switchSession(handoffSessionFile);
+			if (result.cancelled) return;
 		},
 	});
 
@@ -678,6 +729,11 @@ Execution rules:
 	pi.on("session_start", async (_event, ctx) => {
 		captureNormalModeTools();
 		restoreSessionState(ctx, true);
+
+		const entries = ctx.sessionManager.getEntries() as Array<{ type: string; customType?: string }>;
+		if (shouldAutoStartHandoffExecution(entries)) {
+			scheduleHandoffExecutionStart(ctx);
+		}
 	});
 
 	pi.on("session_switch", async (_event, ctx) => {
