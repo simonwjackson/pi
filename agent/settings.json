@@ -1,7 +1,7 @@
 {
-  "lastChangelogVersion": "0.67.2",
+  "lastChangelogVersion": "0.73.0",
   "defaultProvider": "openai-codex",
-  "defaultModel": "gpt-5.4",
+  "defaultModel": "gpt-5.5",
   "defaultThinkingLevel": "high",
   "quietStartup": true,
   "collapseChangelog": true,
@@ -10,15 +10,17 @@
     "enabled": true
   },
   "enabledModels": [
-    "anthropic/claude-opus-4-6",
-    "openai-codex/gpt-5.4"
+    "openai-codex/gpt-5.5",
+    "anthropic/claude-opus-4-7"
   ],
-  "hideThinkingBlock": true,
+  "hideThinkingBlock": false,
   "steeringMode": "one-at-a-time",
   "packages": [
     "../packages/pi-thinking",
     "../packages/software-engineering",
-    "npm:@tintinweb/pi-subagents"
+    "../packages/react",
+    "npm:@tintinweb/pi-subagents",
+    "../../code/github/simonwjackson/pi-bedrock-principals"
   ],
   "npmCommand": [
     "env",
