@@ -1,7 +1,7 @@
 {
   "name": "@simonwjackson/pi-thinking",
   "version": "0.1.0",
-  "description": "Guided thinking, shaping, and web research workflows for Pi.",
+  "description": "Guided thinking workflows for Pi.",
   "license": "UNLICENSED",
   "keywords": ["pi-package"],
   "files": [
@@ -29,8 +29,17 @@
   },
   "type": "module",
   "pi": {
-    "extensions": ["./extensions"],
-    "skills": ["./skills"],
+    "extensions": [
+      "./extensions/flow-mode",
+      "./extensions/question.ts",
+      "./extensions/shape-mode",
+      "./extensions/spec-mode",
+      "./extensions/think-mode"
+    ],
+    "skills": [
+      "./skills/shaping",
+      "./skills/thinking-partner"
+    ],
     "prompts": ["./prompts"]
   }
 }

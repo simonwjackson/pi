@@ -19,7 +19,12 @@ import { Key } from "@mariozechner/pi-tui";
 import { extractTodoItems, isSafeCommand, markCompletedSteps, type TodoItem } from "./utils.js";
 
 const SPEC_MODE_TOOLS = ["read", "bash", "grep", "find", "ls", "questionnaire", "web_search"];
-const FALLBACK_NORMAL_TOOLS = ["read", "bash", "edit", "write", "web_search"];
+const FALLBACK_NORMAL_BUILTINS = ["read", "bash", "edit", "write", "web_search"];
+function fallbackNormalTools(pi: ExtensionAPI): string[] {
+	const registered = pi.getAllTools().map((tool) => tool.name);
+	return Array.from(new Set([...FALLBACK_NORMAL_BUILTINS, ...registered]));
+}
+const FALLBACK_NORMAL_TOOLS = FALLBACK_NORMAL_BUILTINS;
 const EXCLUSIVE_MODALITY_EVENT = "modality:activated";
 const SPEC_MODALITY_ID = "spec-mode";
 const HANDOFF_AUTO_COMPACT_RESERVE_TOKENS = 16384;
@@ -149,11 +154,11 @@ export default function specModeExtension(pi: ExtensionAPI): void {
 	function captureNormalModeTools(): void {
 		if (normalModeTools) return;
 		const active = pi.getActiveTools();
-		normalModeTools = active.length > 0 ? [...active] : [...FALLBACK_NORMAL_TOOLS];
+		normalModeTools = active.length > 0 ? [...active] : fallbackNormalTools(pi);
 	}
 
 	function restoreNormalModeTools(): void {
-		pi.setActiveTools(normalModeTools ?? FALLBACK_NORMAL_TOOLS);
+		pi.setActiveTools(normalModeTools ?? fallbackNormalTools(pi));
 	}
 
 	function announceModalityActivation(): void {
@@ -161,7 +166,7 @@ export default function specModeExtension(pi: ExtensionAPI): void {
 	}
 
 	function currentModeTools(): string[] {
-		return specModeEnabled ? SPEC_MODE_TOOLS : (normalModeTools ?? FALLBACK_NORMAL_TOOLS);
+		return specModeEnabled ? SPEC_MODE_TOOLS : (normalModeTools ?? fallbackNormalTools(pi));
 	}
 
 	function updateStatus(ctx: ExtensionContext): void {

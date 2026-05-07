@@ -7,7 +7,9 @@
   "collapseChangelog": true,
   "theme": "tokyo-night-dark",
   "compaction": {
-    "enabled": true
+    "enabled": true,
+    "reserveTokens": 16384,
+    "keepRecentTokens": 20000
   },
   "enabledModels": [
     "openai-codex/gpt-5.5",
@@ -17,10 +19,8 @@
   "steeringMode": "one-at-a-time",
   "packages": [
     "../packages/pi-thinking",
-    "../packages/software-engineering",
-    "../packages/react",
-    "npm:@tintinweb/pi-subagents",
-    "../../code/github/simonwjackson/pi-bedrock-principals"
+    "../../code/github/simonwjackson/pi-software-engineering",
+    "../../code/github/simonwjackson/pi-web-search"
   ],
   "npmCommand": [
     "env",

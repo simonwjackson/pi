@@ -11,7 +11,12 @@ import {
 } from "./utils.js";
 
 const SHAPE_MODE_TOOLS = ["read", "bash", "grep", "find", "write", "web_search", "question"];
-const NORMAL_MODE_TOOLS = ["read", "bash", "edit", "write", "web_search"];
+const NORMAL_MODE_BUILTINS = ["read", "bash", "edit", "write", "web_search"];
+function NORMAL_MODE_TOOLS_FOR(pi: ExtensionAPI): string[] {
+	const registered = pi.getAllTools().map((tool) => tool.name);
+	return Array.from(new Set([...NORMAL_MODE_BUILTINS, ...registered]));
+}
+let NORMAL_MODE_TOOLS: string[] = [...NORMAL_MODE_BUILTINS];
 const EXCLUSIVE_MODALITY_EVENT = "modality:activated";
 const SHAPE_MODALITY_ID = "shape-mode";
 
@@ -105,7 +110,7 @@ export default function shapeModeExtension(pi: ExtensionAPI): void {
 	});
 
 	function currentModeTools(): string[] {
-		return state.enabled ? SHAPE_MODE_TOOLS : NORMAL_MODE_TOOLS;
+		return state.enabled ? SHAPE_MODE_TOOLS : NORMAL_MODE_TOOLS_FOR(pi);
 	}
 
 	function persistState(): void {
@@ -120,7 +125,7 @@ export default function shapeModeExtension(pi: ExtensionAPI): void {
 		state.enabled = false;
 		state.phase = "research";
 		if (options?.restoreTools) {
-			pi.setActiveTools(NORMAL_MODE_TOOLS);
+			pi.setActiveTools(NORMAL_MODE_TOOLS_FOR(pi));
 		}
 		persistState();
 		updateStatus(ctx);
