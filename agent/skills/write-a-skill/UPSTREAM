@@ -1,0 +1,5 @@
+repo: https://github.com/mattpocock/skills
+path: skills/productivity/write-a-skill/
+commit: f304057d61d3df3c9fd992ac2b6e3833cb9325fb
+fetched: 2026-05-12
+note: Vendored verbatim. To refresh, diff against upstream at the path above and update commit SHA.
